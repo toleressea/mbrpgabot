@@ -30,14 +30,14 @@ def get_db():
     return conn
 
 # Create
-def create_plan(channel_id: int, plan_id: str, current_day: int = 0, paused: bool = False) -> int:
+def create_plan(channel_id: int, plan_type: str, current_day: int = 0, paused: bool = False) -> int:
     """Create a new plan entry and return its ID."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        '''INSERT INTO plans (channel_id, plan_id, current_day, paused, created_at, updated_at)
+        '''INSERT INTO plans (channel_id, plan_type, current_day, paused, created_at, updated_at)
            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)''',
-        (channel_id, plan_id, current_day, paused)
+        (channel_id, plan_type, current_day, paused)
     )
     conn.commit()
     last_id = cursor.lastrowid
@@ -52,10 +52,10 @@ def get_plan(plan_id: int) -> Optional[dict]:
     conn.close()
     return dict(plan) if plan else None
 
-def get_plan_by_channel_and_plan(channel_id: int, plan_id: str) -> Optional[dict]:
-    """Get all plans for a specific channel."""
+def get_plan_by_channel_and_type(channel_id: int, plan_type: str) -> Optional[dict]:
+    """Get plan for a specific channel and plan type."""
     conn = get_db()
-    plan = conn.execute('SELECT * FROM plans WHERE channel_id = ? AND plan_id = ?', (channel_id, plan_id)).fetchone()
+    plan = conn.execute('SELECT * FROM plans WHERE channel_id = ? AND plan_type = ?', (channel_id, plan_type)).fetchone()
     conn.close()
     return dict(plan) if plan else None
 
@@ -87,7 +87,7 @@ def update_plan(plan_id: int, channel_id: int = None, plan_type: str = None,
         update_fields.append('channel_id = ?')
         values.append(channel_id)
     if plan_type is not None:
-        update_fields.append('plan_id = ?')
+        update_fields.append('plan_type = ?')
         values.append(plan_type)
     if current_day is not None:
         update_fields.append('current_day = ?')
@@ -98,9 +98,10 @@ def update_plan(plan_id: int, channel_id: int = None, plan_type: str = None,
     
     if not update_fields:
         return False
-    
+        
+    query = f'''UPDATE plans SET {', '.join(update_fields)} WHERE id = ?'''
     values.append(plan_id)
-    query = f'UPDATE plans SET {", ".join(update_fields)} WHERE id = ?'
+    
     cursor.execute(query, values)
     conn.commit()
     success = cursor.rowcount > 0

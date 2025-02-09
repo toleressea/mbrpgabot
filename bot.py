@@ -47,19 +47,19 @@ class BibleReadingBotHelp(commands.MinimalHelpCommand):
         
         commands_text = """
 • `!plans` - List all active reading plans in this channel
-• `!start <plan_id>` - Start a new reading plan in the current channel
-• `!stop <plan_id>` - Stop and remove a reading plan
-• `!reading <plan_id>` - Get the current reading plan for the channel
-• `!set <plan_id> <day>` - Set the current day for a reading plan
-• `!pause <plan_id>` - Pause the specified reading plan
-• `!resume <plan_id>` - Resume a paused reading plan
+• `!start <type>` - Start a new reading plan in the current channel
+• `!stop <type>` - Stop and remove a reading plan
+• `!reading <type>` - Get the current reading plan for the channel
+• `!set <type> <day>` - Set the current day for a reading plan
+• `!pause <type>` - Pause the specified reading plan
+• `!resume <type>` - Resume a paused reading plan
 """
         embed.add_field(name="Available Commands", value=commands_text, inline=False)
         
         plans_text = ""
-        for plan_id, plan_data in PLANS.items():
+        for plan_type, plan_data in PLANS.items():
             source_link = f" ([source]({plan_data['source_link']}))" if 'source_link' in plan_data else ""
-            plans_text += f"• `{plan_id}` - {plan_data['name']}{source_link}\n"
+            plans_text += f"• `{plan_type}` - {plan_data['name']}{source_link}\n"
         
         embed.add_field(name="Available Reading Plans", value=plans_text, inline=False)
         
@@ -74,30 +74,31 @@ def format_plan_name(plan_content: dict) -> str:
     name = plan_content["name"]
     return f'[{name}]({plan_content["source_link"]})' if 'source_link' in plan_content else name
 
-def get_plan_content(plan_id: str):
-    """Get plan content and validate plan_id exists"""
-    plan_id = plan_id.lower()
-    if plan_id not in PLANS:
+def get_plan_content(plan_type: str):
+    """Get plan content and validate plan type exists"""
+    plan_type = plan_type.lower()
+    if plan_type not in PLANS:
         return None
-    return PLANS[plan_id]
+    return PLANS[plan_type]
 
 def get_daily_reading(plan: dict) -> str:
+    """Get formatted daily reading message for a plan"""
     day = plan["current_day"]
-    plan_content = PLANS[plan["plan_id"]]
+    plan_content = PLANS[plan["plan_type"]]  # Now using plan_type from db
     return f'{format_plan_name(plan_content)}, Daily Reading {day + 1} -- **{", ".join(plan_content["readings"][day])}**'
 
-async def validate_plan(ctx, plan_id: str, check_exists: bool = True) -> tuple:
-    """Validate plan_id and get plan data. Returns (plan_content, plan) tuple.
+async def validate_plan(ctx, plan_type: str, check_exists: bool = True) -> tuple:
+    """Validate plan type and get plan data. Returns (plan_content, plan) tuple.
     
     If check_exists is True, verifies the plan exists in the channel.
     If check_exists is False, verifies the plan doesn't exist in the channel.
     """
-    plan_content = get_plan_content(plan_id)
+    plan_content = get_plan_content(plan_type)
     if not plan_content:
-        await ctx.send(f'`{plan_id}` is not a supported plan!')
+        await ctx.send(f'`{plan_type}` is not a supported plan!')
         return None, None
         
-    plan = db.get_plan_by_channel_and_plan(ctx.message.channel.id, plan_id)
+    plan = db.get_plan_by_channel_and_type(ctx.message.channel.id, plan_type)
     
     if check_exists and not plan:
         await ctx.send(f'{format_plan_name(plan_content)} not running for this channel!')
@@ -117,43 +118,43 @@ async def plans(ctx):
     if plans:
         message = ''
         for p in plans:
-            plan_content = PLANS[p["plan_id"]]
-            message += f'{format_plan_name(plan_content)} (`{p["plan_id"]}`): Current Day - {p["current_day"] + 1}, Paused - {"Yes" if p["paused"] else "No"}\n'
+            plan_content = PLANS[p["plan_type"]]  # Now using plan_type from db
+            message += f'{format_plan_name(plan_content)} (`{p["plan_type"]}`): Current Day - {p["current_day"] + 1}, Paused - {"Yes" if p["paused"] else "No"}\n'
     else:
-        message = 'No reading plans found. Try adding one with !start <plan_id> from the following list:\n'
-        for plan_id, plan_content in PLANS.items():
-            message += f'- `{plan_id}` ({format_plan_name(plan_content)})\n'
+        message = 'No reading plans found. Try adding one with !start <type> from the following list:\n'
+        for plan_type, plan_content in PLANS.items():
+            message += f'- `{plan_type}` ({format_plan_name(plan_content)})\n'
             
     await ctx.send(message)
 
 @bot.command()
-async def start(ctx, plan_id: str):
+async def start(ctx, plan_type: str):
     """Start a new reading plan in the current channel"""
-    plan_content, _ = await validate_plan(ctx, plan_id, check_exists=False)
+    plan_content, _ = await validate_plan(ctx, plan_type, check_exists=False)
     if plan_content:
-        db.create_plan(ctx.message.channel.id, plan_id)
+        db.create_plan(ctx.message.channel.id, plan_type)
         await ctx.send(f'{format_plan_name(plan_content)} started!')
 
 @bot.command()
-async def pause(ctx, plan_id: str):
+async def pause(ctx, plan_type: str):
     """Pause a reading plan to temporarily stop receiving daily readings"""
-    plan_content, plan = await validate_plan(ctx, plan_id)
+    plan_content, plan = await validate_plan(ctx, plan_type)
     if plan:
         db.update_plan(plan['id'], paused=True)
         await ctx.send(f'{format_plan_name(plan_content)} paused!')
 
 @bot.command()
-async def resume(ctx, plan_id: str):
+async def resume(ctx, plan_type: str):
     """Resume a previously paused reading plan"""
-    plan_content, plan = await validate_plan(ctx, plan_id)
+    plan_content, plan = await validate_plan(ctx, plan_type)
     if plan:
         db.update_plan(plan['id'], paused=False)
         await ctx.send(f'{format_plan_name(plan_content)} resumed!')
 
 @bot.command()
-async def set(ctx, plan_id: str, day: int):
+async def set(ctx, plan_type: str, day: int):
     """Set the current day for a reading plan"""
-    plan_content, plan = await validate_plan(ctx, plan_id)
+    plan_content, plan = await validate_plan(ctx, plan_type)
     if plan:
         db.update_plan(plan['id'], current_day=day - 1)
         await ctx.send(f'{format_plan_name(plan_content)} set to day {day}!')
@@ -170,9 +171,9 @@ async def readings(ctx):
         await ctx.send(get_daily_reading(plan))
 
 @bot.command()
-async def stop(ctx, plan_id: str):
+async def stop(ctx, plan_type: str):
     """Stop and remove a reading plan from the channel"""
-    plan_content, plan = await validate_plan(ctx, plan_id)
+    plan_content, plan = await validate_plan(ctx, plan_type)
     if plan:
         db.delete_plan(plan['id'])
         await ctx.send(f'{format_plan_name(plan_content)} stopped!')
