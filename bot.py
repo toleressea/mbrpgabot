@@ -49,7 +49,7 @@ class BibleReadingBotHelp(commands.MinimalHelpCommand):
 • `!plans` - List all active reading plans in this channel
 • `!start <type>` - Start a new reading plan in the current channel
 • `!stop <type>` - Stop and remove a reading plan
-• `!reading <type>` - Get the current reading plan for the channel
+• `!readings <type>` - Get the current reading plan for the channel
 • `!set <type> <day>` - Set the current day for a reading plan
 • `!pause <type>` - Pause the specified reading plan
 • `!resume <type>` - Resume a paused reading plan
