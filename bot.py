@@ -39,11 +39,12 @@ async def on_ready():
             # Increment the day if the plan is not paused
             if not plan["paused"]:
                 plan['current_day'] += 1
+                # Wrap to 0 if we've exceeded the plan length
+                plan['current_day'] = normalize_day(plan['current_day'], plan['plan_type'])
                 db.update_plan(plan["id"], current_day=plan["current_day"])
 
             await message_channel.send(get_daily_reading(plan))
             
-                
         await bot.close()
 
 class BibleReadingBotHelp(commands.MinimalHelpCommand):
@@ -88,6 +89,18 @@ def get_plan_content(plan_type: str):
     if plan_type not in PLANS:
         return None
     return PLANS[plan_type]
+
+def get_plan_length(plan_type: str) -> int:
+    """Get the number of days in a reading plan"""
+    return len(PLANS[plan_type]["readings"])
+
+def normalize_day(day: int, plan_type: str) -> int:
+    """Normalize the day to be within the plan's length.
+    Only wraps to 0 if the day exceeds the plan length."""
+    plan_length = get_plan_length(plan_type)
+    if day >= plan_length:
+        return 0
+    return day
 
 def get_daily_reading(plan: dict) -> str:
     """Get formatted daily reading message for a plan"""
@@ -177,8 +190,18 @@ async def set(ctx, plan_type: str, day: int):
     """Set the current day for a reading plan"""
     plan_content, plan = await validate_plan(ctx, plan_type)
     if plan:
-        db.update_plan(plan['id'], current_day=day - 1)
-        await ctx.send(f'{format_plan_name(plan_content)} set to day {day}!')
+        # Convert to 0-based index and normalize
+        zero_based_day = day - 1
+        plan_length = get_plan_length(plan_type)
+        
+        if zero_based_day >= plan_length:
+            normalized_day = 0
+            await ctx.send(f'{format_plan_name(plan_content)} set to day 1 (wrapped around from {day}, plan length is {plan_length})')
+        else:
+            normalized_day = zero_based_day
+            await ctx.send(f'{format_plan_name(plan_content)} set to day {day}!')
+            
+        db.update_plan(plan['id'], current_day=normalized_day)
 
 @bot.command()
 async def readings(ctx):
