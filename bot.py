@@ -34,7 +34,7 @@ async def on_ready():
     if args.publish and bot.is_ready():
         registered_plans = db.get_all_plans()
         for plan in registered_plans:
-            message_channel = bot.get_channel(plan["channel_id"])
+            ctx = bot.get_channel(plan["channel_id"])
 
             # Increment the day if the plan is not paused
             if not plan["paused"]:
@@ -43,7 +43,7 @@ async def on_ready():
                 plan['current_day'] = normalize_day(plan['current_day'], plan['plan_type'])
                 db.update_plan(plan["id"], current_day=plan["current_day"])
 
-            await message_channel.send(get_daily_reading(plan))
+            await send_daily_reading(ctx, plan)
             
         await bot.close()
 
@@ -102,12 +102,50 @@ def normalize_day(day: int, plan_type: str) -> int:
         return 0
     return day
 
-def get_daily_reading(plan: dict) -> str:
+async def send_daily_reading(ctx, plan: dict) -> str:
     """Get formatted daily reading message for a plan"""
     day = plan["current_day"]
     plan_content = PLANS[plan["plan_type"]]  # Now using plan_type from db
     paused_text = " (Paused)" if plan["paused"] else ""
-    return f'{format_plan_name(plan_content)}, Daily Reading {day + 1}{paused_text} -- **{", ".join(plan_content["readings"][day])}**'
+
+    reading_header = f'{format_plan_name(plan_content)}, Daily Reading {day + 1}{paused_text} --'
+    readings = plan_content["readings"][day]
+
+    p_type = plan_content['type']
+    if p_type == 'bible_calendar':
+        await ctx.send(f'{reading_header} **{", ".join(readings)}**')
+    elif p_type == 'book':
+        await ctx.send(f'**{reading_header}**')
+        for reading in readings:        
+            # Split text into chunks of max 2000 chars (Discord limit)
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            
+            # Split by words to avoid breaking words
+            words = reading.split()
+            for word in words:
+                # Add 1 for the space after the word
+                word_length = len(word) + 1
+                
+                # If adding this word would exceed limit, start new chunk
+                if current_length + word_length > 2000 and current_chunk:
+                    chunks.append(' '.join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+                
+                current_chunk.append(word)
+                current_length += word_length
+            
+            # Add remaining text as final chunk
+            if current_chunk:
+                chunks.append(' '.join(current_chunk))
+            
+            # Send header and chunks
+            for chunk in chunks:
+                await ctx.send(chunk)
+    else:
+        await ctx.send(f'Unsupported plan type: {p_type}')
 
 async def validate_plan(ctx, plan_type: str, check_exists: bool = True) -> tuple:
     """Validate plan type and get plan data. Returns (plan_content, plan) tuple.
@@ -159,7 +197,7 @@ async def start(ctx, plan_type: str):
 
         # Also post the reading for the newly started plan
         plan = db.get_plan(plan_id)
-        await ctx.send(get_daily_reading(plan))
+        await send_daily_reading(ctx, plan)
 
 @bot.command()
 async def pause(ctx, plan_type: str):
@@ -212,7 +250,7 @@ async def readings(ctx):
         return
 
     for plan in plans:
-        await ctx.send(get_daily_reading(plan))
+        await send_daily_reading(ctx, plan)
 
 @bot.command()
 async def stop(ctx, plan_type: str):
